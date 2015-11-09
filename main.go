@@ -71,22 +71,26 @@ func getValidDevices(user *goplex.UserAuthQuery) ([]*validConnection, error) {
 		return nil, err
 	}
 
-	ch := make(chan *validConnection)
+	deviceCount := len(devices)
+	validDevices := make([]*validConnection, 0, deviceCount)
+
+	ch := make(chan bool)
 
 	for _, d := range devices {
-		go validateDevice(d, ch)
+		go func () {
+			cxn, err := d.GetBestConnection(ServerScanTimeout)
+			if err == nil {
+				validDevices = append(validDevices, &validConnection{d, cxn})
+			}
+			ch <- true
+		}()
 	}
 
-	validDevices := make([]*validConnection, 0, len(devices))
-
-	for {
-		select {
-		case cxn := <-ch:
-			validDevices = append(validDevices, cxn)
-		case <-time.After(ServerScanTimeout):
-			return validDevices, nil
-		}
+	for idx := 0; idx < deviceCount; idx ++ {
+		<- ch
 	}
+
+	return validDevices, nil
 }
 
 type NoDevices struct {}
@@ -111,7 +115,7 @@ func getDevice(user *goplex.UserAuthQuery) (*validConnection, error) {
 
 	for index, d := range validDevices {
 		commands[index] = menu.CommandOption{
-			fmt.Sprint("%d", index + 1),
+			fmt.Sprintf("%d", index + 1),
 			d.Device.Name,
 			func (cmd ...string) error {
 				selectedDevice = d
@@ -164,7 +168,7 @@ var configureCommand = cli.Command{
 		fmt.Print("Testing devices ... \n")
 		device, err := getDevice(user)
 		if err != nil {
-			fmt.Printf("Failed to get device: %s\n")
+			fmt.Printf("Failed to get device: %s\n", err)
 			os.Exit(4)
 			return
 		}
