@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"bufio"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"time"
 )
 
 import (
@@ -12,8 +14,10 @@ import (
 	"github.com/codegangsta/cli"
 //	"github.com/djeebus/go-castv2"
 	"github.com/turret-io/go-menu/menu"
-	"time"
+	"gopkg.in/yaml.v2"
 )
+
+const ConfigFileName = "config.yaml"
 
 func getUsername(context *cli.Context)(username string, err error) {
 	username = context.String("username")
@@ -77,13 +81,13 @@ func getValidDevices(user *goplex.UserAuthQuery) ([]*validConnection, error) {
 	ch := make(chan bool)
 
 	for _, d := range devices {
-		go func () {
-			cxn, err := d.GetBestConnection(ServerScanTimeout)
+		go func (dev *goplex.PlexDevice) {
+			cxn, err := dev.GetBestConnection(ServerScanTimeout)
 			if err == nil {
 				validDevices = append(validDevices, &validConnection{d, cxn})
 			}
 			ch <- true
-		}()
+		}(d)
 	}
 
 	for idx := 0; idx < deviceCount; idx ++ {
@@ -131,6 +135,19 @@ func getDevice(user *goplex.UserAuthQuery) (*validConnection, error) {
 	return selectedDevice, nil
 }
 
+type Configuration struct {
+	PlexToken		string	`yaml:"plex_token"`
+	PlexUrl			string	`yaml:"plex_url"`
+	ChromecastName	string	`yaml:"chromecast_name"`
+}
+
+func check(e error, code int, prompt string) {
+	if e != nil {
+		fmt.Printf("%s: %s\n", prompt, e)
+		os.Exit(code)
+	}
+}
+
 var configureCommand = cli.Command{
 	Name: "configure",
 	Usage: "Store credentials for future use",
@@ -146,35 +163,60 @@ var configureCommand = cli.Command{
 	},
 	Action: func (context *cli.Context) {
 		username, err := getUsername(context)
-		if err != nil {
-			fmt.Printf("Failed to get username: %s\n", err)
-			os.Exit(1)
-		}
+		check(err, 1, "Failed to get username")
 
 		password, err := getPassword(context)
-		if err != nil {
-			fmt.Printf("Failed to get password: %s\n", err)
-			os.Exit(2)
-		}
+		check(err, 2, "Failed to get password")
 
-		fmt.Print("Signing in ... \n")
+		fmt.Print("Signing in ... ")
 		user, err := goplex.SignIn(username, password)
-		if err != nil {
-			fmt.Printf("Failed to sign in: %s\n", err)
-			os.Exit(3)
-			return
-		}
+		check(err, 3, "failed to sign in")
+		fmt.Println("done")
 
-		fmt.Print("Testing devices ... \n")
+		fmt.Print("Testing devices ... ")
 		device, err := getDevice(user)
-		if err != nil {
-			fmt.Printf("Failed to get device: %s\n", err)
-			os.Exit(4)
-			return
+		check(err, 4, "failed to get device")
+		fmt.Printf("got device: %s\n", device.Device.Name)
+
+		fmt.Print("Discovering chromecasts ... ")
+		chromecast, err := getChromecast()
+		check(err, 5, "failed to find chromecasts")
+		fmt.Printf("found %s\n", chromecast.Host)
+
+		config := Configuration{
+			PlexToken: user.AuthToken,
+			PlexUrl: device.Connection.Uri,
+			ChromecastName: chromecast.Name,
 		}
 
-		fmt.Printf("Got device: %s\n", device.Device.Name)
+		data, err := yaml.Marshal(&config)
+		check(err, 6, "Failed to create config")
+
+		os.Remove(ConfigFileName)
+
+		err = ioutil.WriteFile(ConfigFileName, data, 0664)
+		check(err, 7, "Failed to write config")
+
+		fmt.Printf("Done!!!!\n")
 	},
+}
+
+func getChromecast() (*ChromecastInfo, error) {
+	chromecasts, err := GetChromecasts(1 * time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("done")
+
+	if len(chromecasts) == 0 {
+		return nil, &NoDevices{}
+	} else if len(chromecasts) == 1 {
+		return chromecasts[0], nil
+	} else {
+		fmt.Printf("Found %d chromecasts", len(chromecasts))
+		os.Exit(6)
+		return nil, nil
+	}
 }
 
 
