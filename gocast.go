@@ -9,6 +9,7 @@ import (
 type ChromecastInfo struct {
 	Name		string
 	Host 		string
+	Addr		net.IP
 	AddrV4		net.IP
 	AddrV6		net.IP
 	Port		int
@@ -31,6 +32,7 @@ func GetChromecasts(duration time.Duration) ([]*ChromecastInfo, error) {
 				Name: e.Name,
 				Host: e.Host,
 				Port: e.Port,
+				Addr: e.Addr,
 				AddrV4: e.AddrV4,
 				AddrV6: e.AddrV6,
 			}
