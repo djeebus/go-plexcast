@@ -18,6 +18,8 @@ type ChromecastInfo struct {
 func GetChromecasts(duration time.Duration) ([]*ChromecastInfo, error) {
 	var casts []*ChromecastInfo
 	ch := make(chan *mdns.ServiceEntry, 4)
+	defer close(ch)
+
 	params := &mdns.QueryParam{
 		Service:             "_googlecast._tcp.local.",
 		Domain:              "local",
@@ -46,6 +48,5 @@ func GetChromecasts(duration time.Duration) ([]*ChromecastInfo, error) {
 		return nil, err
 	}
 
-	close(ch)
 	return casts, nil
 }

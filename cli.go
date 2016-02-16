@@ -9,7 +9,7 @@ import (
 
 import (
 	"code.google.com/p/gopass"
-	"github.com/djeebus/goplex"
+	"github.com/djeebus/go-plex"
 	"github.com/codegangsta/cli"
 	"github.com/crackcomm/go-clitable"
 //	"github.com/djeebus/go-castv2"
@@ -41,8 +41,8 @@ func getPassword(context *cli.Context) (password string, err error) {
 }
 
 type validConnection struct {
-	Device		*goplex.PlexDevice
-	Connection	*goplex.PlexDeviceConnection
+	Device		*plex.PlexDevice
+	Connection	*plex.PlexDeviceConnection
 }
 
 type Configuration struct {
@@ -85,7 +85,7 @@ var listPlexServersCommand = cli.Command{
 		check(err, 2, "Failed to get password")
 
 		fmt.Print("Signing in ... ")
-		user, err := goplex.SignIn(username, password)
+		user, err := plex.SignIn(username, password)
 		check(err, 3, "failed to sign in")
 		fmt.Println("done")
 
@@ -94,23 +94,17 @@ var listPlexServersCommand = cli.Command{
 
 		table := clitable.New([]string{"Server Name", "Username", "Url", "Status"})
 
-		done := make(chan bool)
-		start := make(chan bool)
-
-		count := 0
 		client := &http.Client{
 			Timeout: timeout,
 		}
 
 		for _, device := range devices {
 			for _, connection := range device.Connections {
-				go func (c *goplex.PlexDeviceConnection,
-						 d *goplex.PlexDevice) {
-					start <- true
-
+				go func (c *plex.PlexDeviceConnection,
+						 d *plex.PlexDevice) {
 					user := d.SourceTitle
 					if len(user) == 0 {
-						user = "<yours>"
+						user = username
 					}
 
 					var status string
@@ -125,28 +119,15 @@ var listPlexServersCommand = cli.Command{
 						"Url": c.Uri,
 						"Status": status,
 					})
-
-					done <- true
 				}(connection, device)
 			}
 		}
 
-		keepGoing := true
-		for keepGoing {
-			select {
-			case <- start:
-				count ++
-			case <- done:
-				count --
-				if count == 0 {
-					keepGoing = false
-				}
-			case <- time.After(timeout):
-				keepGoing = false
-			}
+		select {
+		case <- time.After(timeout):
+			table.Print()
+			return
 		}
-
-		table.Print()
 	},
 }
 
@@ -154,9 +135,10 @@ var listChromecastsCommand = cli.Command{
 	Name: "list",
 	Usage: "Find chromecasts",
 	Flags: []cli.Flag{
-		cli.StringFlag{
+		cli.DurationFlag{
 			Name: "timeout",
 			Usage: "Wait for this many seconds to find chromecasts",
+			Value: time.Second * 15,
 
 		},
 	},
@@ -216,7 +198,7 @@ var plexTokenCommand = cli.Command{
 		password, err := getPassword(context)
 		check(err, 2, "Failed to get password")
 
-		user, err := goplex.SignIn(username, password)
+		user, err := plex.SignIn(username, password)
 		check(err, 3, "failed to sign in")
 
 		fmt.Println(user.AuthToken)
